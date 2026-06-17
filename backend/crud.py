@@ -342,6 +342,21 @@ def get_applications(db: Session, skip: int = 0, limit: int = 100, filters: Opti
 
 
 def create_application(db: Session, application: schemas.ApplicationCreate):
+    consumable_ids = [item.consumable_id for item in application.items]
+    if len(consumable_ids) != len(set(consumable_ids)):
+        seen = set()
+        duplicate_id = None
+        for cid in consumable_ids:
+            if cid in seen:
+                duplicate_id = cid
+                break
+            seen.add(cid)
+        if duplicate_id:
+            consumable = get_consumable(db, duplicate_id)
+            raise ValueError(
+                f"同一张申领单内不能重复添加耗材 '{consumable.name if consumable else duplicate_id}'"
+            )
+
     for item in application.items:
         if check_duplicate_application(db, application.course_id, item.consumable_id):
             consumable = get_consumable(db, item.consumable_id)
@@ -388,6 +403,21 @@ def update_application(db: Session, application_id: int, application: schemas.Ap
         setattr(db_app, key, value)
 
     if application.items:
+        consumable_ids = [item.consumable_id for item in application.items if item.consumable_id]
+        if len(consumable_ids) != len(set(consumable_ids)):
+            seen = set()
+            duplicate_id = None
+            for cid in consumable_ids:
+                if cid in seen:
+                    duplicate_id = cid
+                    break
+                seen.add(cid)
+            if duplicate_id:
+                consumable = get_consumable(db, duplicate_id)
+                raise ValueError(
+                    f"同一张申领单内不能重复添加耗材 '{consumable.name if consumable else duplicate_id}'"
+                )
+
         for existing_item in db_app.items:
             db.delete(existing_item)
 
@@ -688,8 +718,7 @@ def get_abnormal_consumptions(db: Session, threshold: float = 0.2) -> List[schem
         joinedload(models.ApplicationItem.application),
         joinedload(models.ApplicationItem.consumable)
     ).join(models.Application).join(models.Feedback).filter(
-        models.ApplicationItem.actual_quantity > 0,
-        models.ApplicationItem.has_exception == True
+        models.ApplicationItem.actual_quantity > 0
     ).all()
 
     results = []
@@ -706,12 +735,19 @@ def get_abnormal_consumptions(db: Session, threshold: float = 0.2) -> List[schem
         usage = feedback.usage_quantity
         requested = item.requested_quantity or 0
 
+        if actual > 0:
+            quantity_deviation = abs(usage - actual) / actual
+        else:
+            quantity_deviation = 0
+
         if requested > 0:
             deviation_rate = abs(usage - requested) / requested
         else:
             deviation_rate = 0
 
-        if deviation_rate >= threshold or item.has_exception:
+        auto_abnormal = quantity_deviation >= threshold or deviation_rate >= threshold
+
+        if auto_abnormal or item.has_exception:
             results.append(schemas.AbnormalConsumptionItem(
                 application_id=item.application.id,
                 application_no=item.application.application_no,
@@ -720,8 +756,8 @@ def get_abnormal_consumptions(db: Session, threshold: float = 0.2) -> List[schem
                 requested_quantity=requested,
                 actual_quantity=actual,
                 usage_quantity=usage,
-                deviation_rate=round(deviation_rate * 100, 2),
-                has_exception=item.has_exception
+                deviation_rate=round(max(quantity_deviation, deviation_rate) * 100, 2),
+                has_exception=item.has_exception or auto_abnormal
             ))
     return results
 

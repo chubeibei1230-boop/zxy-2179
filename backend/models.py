@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date, Text, Boolean
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, date
 from database import Base
 
 
@@ -48,6 +48,12 @@ class Batch(Base):
 
     consumable = relationship("Consumable", back_populates="batches")
     application_items = relationship("ApplicationItem", back_populates="batch")
+
+    @property
+    def is_expiring_soon(self):
+        if not self.expiry_date:
+            return False
+        return (self.expiry_date - date.today()).days <= 30
 
 
 class Course(Base):
