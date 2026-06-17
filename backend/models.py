@@ -152,3 +152,56 @@ class Feedback(Base):
 
     application = relationship("Application", back_populates="feedbacks")
     application_item = relationship("ApplicationItem")
+
+
+class ConsumableTemplate(Base):
+    __tablename__ = "consumable_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    description = Column(Text)
+    applicable_courses = Column(Text)
+    created_by = Column(String(50))
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    items = relationship("TemplateItem", back_populates="template", cascade="all, delete-orphan")
+    usage_histories = relationship("TemplateUsageHistory", back_populates="template")
+
+
+class TemplateItem(Base):
+    __tablename__ = "template_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("consumable_templates.id"), nullable=False, index=True)
+    consumable_id = Column(Integer, ForeignKey("consumables.id"), nullable=False, index=True)
+    quantity_per_student = Column(Float, nullable=False, default=0)
+    remark = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    template = relationship("ConsumableTemplate", back_populates="items")
+    consumable = relationship("Consumable")
+
+
+class TemplateUsageHistory(Base):
+    __tablename__ = "template_usage_histories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("consumable_templates.id"), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
+    consumable_id = Column(Integer, ForeignKey("consumables.id"), nullable=False, index=True)
+    student_count = Column(Integer, nullable=False)
+    requested_quantity = Column(Float, nullable=False)
+    actual_quantity = Column(Float)
+    usage_quantity = Column(Float)
+    deviation_rate = Column(Float)
+    used_at = Column(Date, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    template = relationship("ConsumableTemplate", back_populates="usage_histories")
+    course = relationship("Course")
+    application = relationship("Application")
+    consumable = relationship("Consumable")

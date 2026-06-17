@@ -224,7 +224,7 @@ function showBatchModal(batch?: BatchWithConsumable) {
     </div>
   `;
 
-  const inputs = form.querySelectorAll('input, select, textarea');
+  const inputs = form.querySelectorAll('input, select, textarea') as NodeListOf<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>;
   inputs[0].name = 'batch_no';
   inputs[1].name = 'consumable_id';
   inputs[2].name = 'quantity';

@@ -2,6 +2,7 @@ import { renderDashboard } from './pages/dashboard';
 import { renderConsumables } from './pages/consumables';
 import { renderBatches } from './pages/batches';
 import { renderCourses } from './pages/courses';
+import { renderTemplates } from './pages/templates';
 import { renderApplications } from './pages/applications';
 import { renderInventory } from './pages/inventory';
 import type { PageType } from './types';
@@ -30,6 +31,9 @@ async function navigateTo(page: PageType) {
     case 'courses':
       await renderCourses(content);
       break;
+    case 'templates':
+      await renderTemplates(content);
+      break;
     case 'applications':
       await renderApplications(content);
       break;
@@ -40,6 +44,8 @@ async function navigateTo(page: PageType) {
       await renderDashboard(content);
   }
 }
+
+(window as any).navigateTo = navigateTo;
 
 navButtons.forEach(btn => {
   btn.addEventListener('click', () => {

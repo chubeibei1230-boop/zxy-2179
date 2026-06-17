@@ -183,7 +183,7 @@ export interface ApplicationFilter {
   end_date?: string;
 }
 
-export type PageType = 'dashboard' | 'consumables' | 'batches' | 'courses' | 'applications' | 'inventory';
+export type PageType = 'dashboard' | 'consumables' | 'batches' | 'courses' | 'applications' | 'inventory' | 'templates';
 
 export const ApplicationStatus = {
   PENDING_SUBMIT: '待提交',
@@ -204,3 +204,132 @@ export const StatusColors: Record<string, string> = {
   '待反馈': '#fd7e14',
   '已关闭': '#6c757d'
 };
+
+export interface TemplateItem {
+  id: number;
+  template_id: number;
+  consumable_id: number;
+  quantity_per_student: number;
+  remark: string | null;
+  consumable: Consumable | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateItemWithInventory extends TemplateItem {
+  total_quantity: number;
+  threshold_status: string | null;
+  available_quantity: number;
+  expiring_batches: BatchWithInventory[];
+  is_duplicate: boolean;
+  duplicate_warning: string | null;
+  gap_quantity: number;
+  historical_avg_deviation: number | null;
+}
+
+export interface ConsumableTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  applicable_courses: string | null;
+  created_by: string | null;
+  is_active: boolean;
+  items: TemplateItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsumableTemplateWithStats extends ConsumableTemplate {
+  usage_count: number;
+  total_consumables: number;
+  last_used_at: string | null;
+  avg_deviation_rate: number | null;
+}
+
+export interface GeneratedApplicationItem {
+  consumable_id: number;
+  consumable_name: string;
+  specification: string | null;
+  unit: string;
+  quantity_per_student: number;
+  student_count: number;
+  suggested_quantity: number;
+  total_quantity: number;
+  available_quantity: number;
+  threshold_status: string | null;
+  expiring_batches: BatchWithInventory[];
+  is_duplicate: boolean;
+  duplicate_warning: string | null;
+  gap_quantity: number;
+  historical_avg_deviation: number | null;
+  remark: string | null;
+}
+
+export interface GenerateApplicationResponse {
+  course_id: number;
+  course_name: string;
+  template_id: number;
+  template_name: string;
+  student_count: number;
+  total_suggested_amount: number;
+  total_available_rate: number;
+  items: GeneratedApplicationItem[];
+  has_duplicates: boolean;
+  has_gaps: boolean;
+  has_expiring: boolean;
+  gap_items_count: number;
+  expiring_items_count: number;
+}
+
+export interface TemplateHistoricalReference {
+  consumable_id: number;
+  consumable_name: string;
+  usage_count: number;
+  avg_quantity_per_student: number;
+  avg_deviation_rate: number | null;
+  last_used_at: string | null;
+}
+
+export interface TemplateUsageHistory {
+  id: number;
+  template_id: number;
+  course_id: number;
+  application_id: number;
+  consumable_id: number;
+  student_count: number;
+  requested_quantity: number;
+  actual_quantity: number | null;
+  usage_quantity: number | null;
+  deviation_rate: number | null;
+  used_at: string;
+  course: Course | null;
+  application: Application | null;
+  consumable: Consumable | null;
+  created_at: string;
+}
+
+export interface BatchWithInventory extends Batch {
+  consumable_name?: string;
+  days_to_expiry?: number;
+  remaining_quantity?: number;
+}
+
+export interface GenerateApplicationRequest {
+  course_id: number;
+  template_id: number;
+  student_count: number;
+  exclude_application_id?: number;
+}
+
+export interface SubmitGeneratedApplicationRequest {
+  course_id: number;
+  template_id: number;
+  applicant: string;
+  purpose?: string;
+  student_count: number;
+  items: Array<{
+    consumable_id: number;
+    requested_quantity: number;
+    remark?: string;
+  }>;
+}

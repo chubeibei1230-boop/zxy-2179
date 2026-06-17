@@ -346,3 +346,163 @@ class BatchWithInventory(Batch):
     remaining_quantity: float = 0.0
     days_to_expiry: int = 0
     expiry_status: Optional[str] = None
+
+
+class TemplateItemBase(BaseModel):
+    consumable_id: int
+    quantity_per_student: float = Field(..., gt=0)
+    remark: Optional[str] = None
+
+
+class TemplateItemCreate(TemplateItemBase):
+    pass
+
+
+class TemplateItemUpdate(BaseModel):
+    consumable_id: Optional[int] = None
+    quantity_per_student: Optional[float] = Field(None, gt=0)
+    remark: Optional[str] = None
+
+
+class TemplateItem(TemplateItemBase):
+    id: int
+    template_id: int
+    consumable: Optional[Consumable] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TemplateItemWithInventory(TemplateItem):
+    total_quantity: float = 0.0
+    threshold_status: Optional[str] = None
+    available_quantity: float = 0.0
+    expiring_batches: List[BatchWithInventory] = []
+    is_duplicate: bool = False
+    duplicate_warning: Optional[str] = None
+    gap_quantity: float = 0.0
+    historical_avg_deviation: Optional[float] = None
+
+
+class ConsumableTemplateBase(BaseModel):
+    name: str = Field(..., max_length=100)
+    description: Optional[str] = None
+    applicable_courses: Optional[str] = None
+    created_by: Optional[str] = Field(None, max_length=50)
+    is_active: Optional[bool] = True
+
+
+class ConsumableTemplateCreate(ConsumableTemplateBase):
+    items: List[TemplateItemCreate]
+
+
+class ConsumableTemplateUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = None
+    applicable_courses: Optional[str] = None
+    is_active: Optional[bool] = None
+    items: Optional[List[TemplateItemCreate]] = None
+
+
+class ConsumableTemplate(ConsumableTemplateBase):
+    id: int
+    items: List[TemplateItem] = []
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConsumableTemplateWithStats(ConsumableTemplate):
+    usage_count: int = 0
+    total_consumables: int = 0
+    last_used_at: Optional[date] = None
+    avg_deviation_rate: Optional[float] = None
+
+
+class GenerateApplicationRequest(BaseModel):
+    course_id: int
+    template_id: int
+    student_count: int = Field(..., gt=0)
+    applicant: str = Field(..., max_length=50)
+    purpose: Optional[str] = None
+
+
+class GeneratedApplicationItem(BaseModel):
+    consumable_id: int
+    consumable_name: str
+    specification: Optional[str] = None
+    unit: str
+    quantity_per_student: float
+    student_count: int
+    suggested_quantity: float
+    total_quantity: float
+    available_quantity: float
+    threshold_status: Optional[str] = None
+    expiring_batches: List[BatchWithInventory] = []
+    is_duplicate: bool = False
+    duplicate_warning: Optional[str] = None
+    gap_quantity: float = 0.0
+    historical_avg_deviation: Optional[float] = None
+    remark: Optional[str] = None
+
+
+class GenerateApplicationResponse(BaseModel):
+    course_id: int
+    course_name: str
+    template_id: int
+    template_name: str
+    student_count: int
+    total_suggested_amount: float = 0.0
+    total_available_rate: float = 0.0
+    items: List[GeneratedApplicationItem] = []
+    has_duplicates: bool = False
+    has_gaps: bool = False
+    has_expiring: bool = False
+    gap_items_count: int = 0
+    expiring_items_count: int = 0
+
+
+class SubmitGeneratedApplicationRequest(BaseModel):
+    course_id: int
+    template_id: int
+    student_count: int
+    applicant: str
+    purpose: Optional[str] = None
+    items: List[ApplicationItemCreate]
+
+
+class TemplateUsageHistoryBase(BaseModel):
+    template_id: int
+    course_id: int
+    application_id: int
+    consumable_id: int
+    student_count: int
+    requested_quantity: float
+    actual_quantity: Optional[float] = None
+    usage_quantity: Optional[float] = None
+    deviation_rate: Optional[float] = None
+    used_at: date
+
+
+class TemplateUsageHistory(TemplateUsageHistoryBase):
+    id: int
+    course: Optional[Course] = None
+    application: Optional[Application] = None
+    consumable: Optional[Consumable] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TemplateHistoricalReference(BaseModel):
+    consumable_id: int
+    consumable_name: str
+    usage_count: int
+    avg_quantity_per_student: float
+    avg_deviation_rate: Optional[float]
+    last_used_at: Optional[date] = None

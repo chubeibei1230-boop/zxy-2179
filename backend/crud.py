@@ -576,7 +576,10 @@ def close_application(db: Session, application_id: int, close_data: schemas.Appl
 
     db.commit()
     db.refresh(db_app)
-    return db_app
+
+    update_template_usage_history_from_feedback(db, db_app.id)
+
+    return get_application(db, db_app.id)
 
 
 def delete_application(db: Session, application_id: int):
@@ -810,3 +813,375 @@ def get_inventory_list(db: Session) -> List[schemas.InventoryItem]:
             batches=batches
         ))
     return results
+
+
+def get_template(db: Session, template_id: int):
+    return db.query(models.ConsumableTemplate).options(
+        joinedload(models.ConsumableTemplate.items).joinedload(models.TemplateItem.consumable)
+    ).filter(models.ConsumableTemplate.id == template_id).first()
+
+
+def get_templates(db: Session, skip: int = 0, limit: int = 100, name: Optional[str] = None, is_active: Optional[bool] = None):
+    query = db.query(models.ConsumableTemplate).options(
+        joinedload(models.ConsumableTemplate.items).joinedload(models.TemplateItem.consumable)
+    )
+    if name:
+        query = query.filter(models.ConsumableTemplate.name.like(f"%{name}%"))
+    if is_active is not None:
+        query = query.filter(models.ConsumableTemplate.is_active == is_active)
+    return query.order_by(models.ConsumableTemplate.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def create_template(db: Session, template: schemas.ConsumableTemplateCreate):
+    consumable_ids = [item.consumable_id for item in template.items]
+    if len(consumable_ids) != len(set(consumable_ids)):
+        raise ValueError("模板中不能包含重复的耗材")
+
+    db_template = models.ConsumableTemplate(
+        name=template.name,
+        description=template.description,
+        applicable_courses=template.applicable_courses,
+        created_by=template.created_by,
+        is_active=template.is_active
+    )
+    db.add(db_template)
+    db.flush()
+
+    for item in template.items:
+        db_item = models.TemplateItem(
+            template_id=db_template.id,
+            consumable_id=item.consumable_id,
+            quantity_per_student=item.quantity_per_student,
+            remark=item.remark
+        )
+        db.add(db_item)
+
+    db.commit()
+    db.refresh(db_template)
+    return get_template(db, db_template.id)
+
+
+def update_template(db: Session, template_id: int, template: schemas.ConsumableTemplateUpdate):
+    db_template = get_template(db, template_id)
+    if not db_template:
+        return None
+
+    for key, value in template.model_dump(exclude_unset=True, exclude={"items"}).items():
+        setattr(db_template, key, value)
+
+    if template.items is not None:
+        consumable_ids = [item.consumable_id for item in template.items]
+        if len(consumable_ids) != len(set(consumable_ids)):
+            raise ValueError("模板中不能包含重复的耗材")
+
+        for existing_item in db_template.items:
+            db.delete(existing_item)
+
+        for item in template.items:
+            db_item = models.TemplateItem(
+                template_id=db_template.id,
+                consumable_id=item.consumable_id,
+                quantity_per_student=item.quantity_per_student,
+                remark=item.remark
+            )
+            db.add(db_item)
+
+    db.commit()
+    db.refresh(db_template)
+    return get_template(db, db_template.id)
+
+
+def delete_template(db: Session, template_id: int):
+    db_template = get_template(db, template_id)
+    if db_template:
+        db.delete(db_template)
+        db.commit()
+    return db_template
+
+
+def get_template_historical_reference(db: Session, template_id: int, consumable_id: int) -> Optional[schemas.TemplateHistoricalReference]:
+    histories = db.query(models.TemplateUsageHistory).filter(
+        and_(
+            models.TemplateUsageHistory.template_id == template_id,
+            models.TemplateUsageHistory.consumable_id == consumable_id,
+            models.TemplateUsageHistory.usage_quantity.isnot(None)
+        )
+    ).order_by(models.TemplateUsageHistory.used_at.desc()).all()
+
+    if not histories:
+        return None
+
+    consumable = get_consumable(db, consumable_id)
+    total_usage = sum(h.usage_quantity or 0 for h in histories)
+    total_students = sum(h.student_count for h in histories)
+    avg_qty_per_student = total_usage / total_students if total_students > 0 else 0
+    deviations = [h.deviation_rate for h in histories if h.deviation_rate is not None]
+    avg_deviation = sum(deviations) / len(deviations) if deviations else None
+
+    return schemas.TemplateHistoricalReference(
+        consumable_id=consumable_id,
+        consumable_name=consumable.name if consumable else "",
+        usage_count=len(histories),
+        avg_quantity_per_student=round(avg_qty_per_student, 4),
+        avg_deviation_rate=round(avg_deviation, 4) if avg_deviation is not None else None,
+        last_used_at=histories[0].used_at
+    )
+
+
+def get_consumable_expiring_batches(db: Session, consumable_id: int) -> List[schemas.BatchWithInventory]:
+    today = date.today()
+    expiry_cutoff = today + timedelta(days=30)
+    batches = db.query(models.Batch).filter(
+        and_(
+            models.Batch.consumable_id == consumable_id,
+            models.Batch.expiry_date <= expiry_cutoff,
+            models.Batch.expiry_date >= today,
+            models.Batch.quantity > 0
+        )
+    ).order_by(models.Batch.expiry_date.asc()).all()
+
+    results = []
+    for batch in batches:
+        days_to_expiry = (batch.expiry_date - today).days if batch.expiry_date else 0
+        expiry_status = "临期" if days_to_expiry <= 7 else "即将到期"
+        results.append(schemas.BatchWithInventory(
+            id=batch.id,
+            batch_no=batch.batch_no,
+            consumable_id=batch.consumable_id,
+            production_date=batch.production_date,
+            expiry_date=batch.expiry_date,
+            quantity=batch.quantity,
+            unit_price=batch.unit_price,
+            supplier=batch.supplier,
+            remark=batch.remark,
+            is_expiring_soon=batch.is_expiring_soon,
+            created_at=batch.created_at,
+            updated_at=batch.updated_at,
+            remaining_quantity=batch.quantity,
+            days_to_expiry=days_to_expiry,
+            expiry_status=expiry_status
+        ))
+    return results
+
+
+def generate_application_from_template(
+    db: Session,
+    course_id: int,
+    template_id: int,
+    student_count: int,
+    exclude_application_id: Optional[int] = None
+) -> schemas.GenerateApplicationResponse:
+    course = get_course(db, course_id)
+    if not course:
+        raise ValueError("课程不存在")
+
+    template = get_template(db, template_id)
+    if not template:
+        raise ValueError("模板不存在")
+
+    if not template.is_active:
+        raise ValueError("该模板已停用")
+
+    if not template.items:
+        raise ValueError("模板没有耗材明细")
+
+    if student_count <= 0:
+        raise ValueError("学生人数必须大于0")
+
+    generated_items: List[schemas.GeneratedApplicationItem] = []
+    total_suggested = 0.0
+    total_available = 0.0
+    has_duplicates = False
+    has_gaps = False
+    has_expiring = False
+    gap_items_count = 0
+    expiring_items_count = 0
+
+    for item in template.items:
+        consumable = get_consumable(db, item.consumable_id)
+        if not consumable:
+            continue
+
+        suggested_qty = round(item.quantity_per_student * student_count, 2)
+        total_qty = get_consumable_total_quantity(db, item.consumable_id)
+        threshold = get_threshold_by_consumable(db, item.consumable_id)
+        expiring_batches = get_consumable_expiring_batches(db, item.consumable_id)
+
+        is_duplicate = check_duplicate_application(db, course_id, item.consumable_id, exclude_application_id)
+        duplicate_warning = None
+        if is_duplicate:
+            has_duplicates = True
+            duplicate_warning = f"该课次下此耗材已有有效申请"
+
+        threshold_status = None
+        if threshold:
+            if total_qty <= threshold.min_threshold:
+                threshold_status = "严重不足"
+            elif total_qty <= threshold.warning_threshold:
+                threshold_status = "库存预警"
+
+        gap_qty = max(0, suggested_qty - total_qty)
+        if gap_qty > 0:
+            has_gaps = True
+            gap_items_count += 1
+
+        if expiring_batches:
+            has_expiring = True
+            expiring_items_count += 1
+
+        historical_ref = get_template_historical_reference(db, template_id, item.consumable_id)
+        historical_avg_deviation = historical_ref.avg_deviation_rate if historical_ref else None
+
+        generated_item = schemas.GeneratedApplicationItem(
+            consumable_id=consumable.id,
+            consumable_name=consumable.name,
+            specification=consumable.specification,
+            unit=consumable.unit,
+            quantity_per_student=item.quantity_per_student,
+            student_count=student_count,
+            suggested_quantity=suggested_qty,
+            total_quantity=total_qty,
+            available_quantity=min(suggested_qty, total_qty),
+            threshold_status=threshold_status,
+            expiring_batches=expiring_batches,
+            is_duplicate=is_duplicate,
+            duplicate_warning=duplicate_warning,
+            gap_quantity=gap_qty,
+            historical_avg_deviation=historical_avg_deviation,
+            remark=item.remark
+        )
+
+        generated_items.append(generated_item)
+        total_suggested += suggested_qty
+        total_available += min(suggested_qty, total_qty)
+
+    total_available_rate = round((total_available / total_suggested) * 100, 2) if total_suggested > 0 else 100.0
+
+    return schemas.GenerateApplicationResponse(
+        course_id=course_id,
+        course_name=course.course_name,
+        template_id=template_id,
+        template_name=template.name,
+        student_count=student_count,
+        total_suggested_amount=total_suggested,
+        total_available_rate=total_available_rate,
+        items=generated_items,
+        has_duplicates=has_duplicates,
+        has_gaps=has_gaps,
+        has_expiring=has_expiring,
+        gap_items_count=gap_items_count,
+        expiring_items_count=expiring_items_count
+    )
+
+
+def submit_generated_application(
+    db: Session,
+    request: schemas.SubmitGeneratedApplicationRequest
+) -> models.Application:
+    application_data = schemas.ApplicationCreate(
+        course_id=request.course_id,
+        applicant=request.applicant,
+        purpose=request.purpose,
+        items=request.items
+    )
+
+    db_application = create_application(db, application_data)
+
+    for item in request.items:
+        usage_history = models.TemplateUsageHistory(
+            template_id=request.template_id,
+            course_id=request.course_id,
+            application_id=db_application.id,
+            consumable_id=item.consumable_id,
+            student_count=request.student_count,
+            requested_quantity=item.requested_quantity,
+            used_at=date.today()
+        )
+        db.add(usage_history)
+
+    db.commit()
+    db.refresh(db_application)
+    return get_application(db, db_application.id)
+
+
+def update_template_usage_history_from_feedback(db: Session, application_id: int):
+    app = get_application(db, application_id)
+    if not app or app.status not in [ApplicationStatus.CLOSED]:
+        return
+
+    histories = db.query(models.TemplateUsageHistory).filter(
+        models.TemplateUsageHistory.application_id == application_id
+    ).all()
+
+    for history in histories:
+        item = next((i for i in app.items if i.consumable_id == history.consumable_id), None)
+        if not item:
+            continue
+
+        feedback = db.query(models.Feedback).filter(
+            models.Feedback.application_item_id == item.id
+        ).first()
+
+        if feedback:
+            history.actual_quantity = item.actual_quantity
+            history.usage_quantity = feedback.usage_quantity
+
+            requested = history.requested_quantity
+            if requested > 0 and feedback.usage_quantity is not None:
+                history.deviation_rate = round(abs(feedback.usage_quantity - requested) / requested, 4)
+
+    db.commit()
+
+
+def get_template_with_stats(db: Session, template_id: int) -> Optional[schemas.ConsumableTemplateWithStats]:
+    template = get_template(db, template_id)
+    if not template:
+        return None
+
+    histories = db.query(models.TemplateUsageHistory).filter(
+        models.TemplateUsageHistory.template_id == template_id
+    ).all()
+
+    usage_count = len(set(h.application_id for h in histories))
+    last_used = max((h.used_at for h in histories), default=None) if histories else None
+
+    deviations = [h.deviation_rate for h in histories if h.deviation_rate is not None]
+    avg_deviation = sum(deviations) / len(deviations) if deviations else None
+
+    return schemas.ConsumableTemplateWithStats(
+        id=template.id,
+        name=template.name,
+        description=template.description,
+        applicable_courses=template.applicable_courses,
+        created_by=template.created_by,
+        is_active=template.is_active,
+        items=template.items,
+        created_at=template.created_at,
+        updated_at=template.updated_at,
+        usage_count=usage_count,
+        total_consumables=len(template.items),
+        last_used_at=last_used,
+        avg_deviation_rate=round(avg_deviation, 4) if avg_deviation is not None else None
+    )
+
+
+def get_templates_with_stats(db: Session, skip: int = 0, limit: int = 100, name: Optional[str] = None, is_active: Optional[bool] = None) -> List[schemas.ConsumableTemplateWithStats]:
+    templates = get_templates(db, skip=skip, limit=limit, name=name, is_active=is_active)
+    results = []
+    for template in templates:
+        stats = get_template_with_stats(db, template.id)
+        if stats:
+            results.append(stats)
+    return results
+
+
+def get_template_usage_histories(db: Session, template_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.TemplateUsageHistory).options(
+        joinedload(models.TemplateUsageHistory.course),
+        joinedload(models.TemplateUsageHistory.application),
+        joinedload(models.TemplateUsageHistory.consumable)
+    ).filter(
+        models.TemplateUsageHistory.template_id == template_id
+    ).order_by(
+        models.TemplateUsageHistory.used_at.desc()
+    ).offset(skip).limit(limit).all()

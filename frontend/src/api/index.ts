@@ -2,7 +2,10 @@ import type {
   Consumable, ConsumableWithInventory, Batch, BatchWithConsumable, Course,
   Application, ApplicationFilter, DashboardStats, LowInventoryItem,
   ExpiringBatchItem, AbnormalConsumptionItem, MissingFeedbackItem,
-  InventoryItem, Feedback, InventoryThreshold
+  InventoryItem, Feedback, InventoryThreshold,
+  ConsumableTemplate, ConsumableTemplateWithStats, GenerateApplicationResponse,
+  GenerateApplicationRequest, SubmitGeneratedApplicationRequest,
+  TemplateUsageHistory, TemplateHistoricalReference
 } from '../types';
 
 const API_BASE = '/api';
@@ -117,6 +120,53 @@ export const api = {
     })
   },
 
+  feedbacks: {
+    list: (params?: { application_id?: number; skip?: number; limit?: number }) => {
+      const query = new URLSearchParams();
+      if (params?.application_id) query.append('application_id', String(params.application_id));
+      if (params?.skip) query.append('skip', String(params.skip));
+      if (params?.limit) query.append('limit', String(params.limit));
+      return request<Feedback[]>(`/feedbacks?${query.toString()}`);
+    },
+    create: (data: Partial<Feedback>) => request<Feedback>('/feedbacks', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+    update: (id: number, data: Partial<Feedback>) => request<Feedback>(`/feedbacks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+    delete: (id: number) => request(`/feedbacks/${id}`, { method: 'DELETE' })
+  },
+
+  templates: {
+    list: (params?: { name?: string; is_active?: boolean; skip?: number; limit?: number }) => {
+      const query = new URLSearchParams();
+      if (params?.name) query.append('name', params.name);
+      if (params?.is_active !== undefined) query.append('is_active', String(params.is_active));
+      if (params?.skip) query.append('skip', String(params.skip));
+      if (params?.limit) query.append('limit', String(params.limit));
+      return request<ConsumableTemplateWithStats[]>(`/templates?${query.toString()}`);
+    },
+    get: (id: number) => request<ConsumableTemplateWithStats>(`/templates/${id}`),
+    create: (data: { name: string; description?: string; applicable_courses?: string; created_by?: string; is_active?: boolean; items: { consumable_id: number; quantity_per_student: number; remark?: string }[] }) => request<ConsumableTemplate>('/templates', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+    update: (id: number, data: { name?: string; description?: string; applicable_courses?: string; is_active?: boolean; items?: { consumable_id: number; quantity_per_student: number; remark?: string }[] }) => request<ConsumableTemplate>(`/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+    delete: (id: number) => request(`/templates/${id}`, { method: 'DELETE' }),
+    getHistories: (id: number, params?: { skip?: number; limit?: number }) => {
+      const query = new URLSearchParams();
+      if (params?.skip) query.append('skip', String(params.skip));
+      if (params?.limit) query.append('limit', String(params.limit));
+      return request<TemplateUsageHistory[]>(`/templates/${id}/histories?${query.toString()}`);
+    },
+    getHistoricalReference: (templateId: number, consumableId: number) => request<TemplateHistoricalReference>(`/templates/${templateId}/historical-reference/${consumableId}`)
+  },
+
   applications: {
     list: (filters?: ApplicationFilter & { skip?: number; limit?: number }) => {
       const query = new URLSearchParams();
@@ -159,25 +209,14 @@ export const api = {
     close: (id: number, data: { closed_by: string }) => request<Application>(`/applications/${id}/close`, {
       method: 'POST',
       body: JSON.stringify(data)
-    })
-  },
-
-  feedbacks: {
-    list: (params?: { application_id?: number; skip?: number; limit?: number }) => {
-      const query = new URLSearchParams();
-      if (params?.application_id) query.append('application_id', String(params.application_id));
-      if (params?.skip) query.append('skip', String(params.skip));
-      if (params?.limit) query.append('limit', String(params.limit));
-      return request<Feedback[]>(`/feedbacks?${query.toString()}`);
-    },
-    create: (data: Partial<Feedback>) => request<Feedback>('/feedbacks', {
+    }),
+    generateFromTemplate: (data: GenerateApplicationRequest) => request<GenerateApplicationResponse>('/applications/generate-from-template', {
       method: 'POST',
       body: JSON.stringify(data)
     }),
-    update: (id: number, data: Partial<Feedback>) => request<Feedback>(`/feedbacks/${id}`, {
-      method: 'PUT',
+    submitGenerated: (data: SubmitGeneratedApplicationRequest) => request<Application>('/applications/submit-generated', {
+      method: 'POST',
       body: JSON.stringify(data)
-    }),
-    delete: (id: number) => request(`/feedbacks/${id}`, { method: 'DELETE' })
+    })
   }
 };

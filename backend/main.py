@@ -369,6 +369,89 @@ def get_feedback_completion_rate(db: Session = Depends(get_db)):
     return crud.get_feedback_completion_rate(db)
 
 
+@app.get("/api/templates", response_model=List[schemas.ConsumableTemplateWithStats])
+def list_templates(
+    skip: int = 0,
+    limit: int = 100,
+    name: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
+    return crud.get_templates_with_stats(db, skip=skip, limit=limit, name=name, is_active=is_active)
+
+
+@app.get("/api/templates/{template_id}", response_model=schemas.ConsumableTemplateWithStats)
+def get_template(template_id: int, db: Session = Depends(get_db)):
+    db_template = crud.get_template_with_stats(db, template_id=template_id)
+    if db_template is None:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    return db_template
+
+
+@app.post("/api/templates", response_model=schemas.ConsumableTemplate)
+def create_template(template: schemas.ConsumableTemplateCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.create_template(db=db, template=template)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/templates/{template_id}", response_model=schemas.ConsumableTemplate)
+def update_template(template_id: int, template: schemas.ConsumableTemplateUpdate, db: Session = Depends(get_db)):
+    try:
+        db_template = crud.update_template(db, template_id=template_id, template=template)
+        if db_template is None:
+            raise HTTPException(status_code=404, detail="模板不存在")
+        return db_template
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/templates/{template_id}")
+def delete_template(template_id: int, db: Session = Depends(get_db)):
+    db_template = crud.delete_template(db, template_id=template_id)
+    if db_template is None:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    return {"message": "删除成功"}
+
+
+@app.get("/api/templates/{template_id}/histories", response_model=List[schemas.TemplateUsageHistory])
+def get_template_histories(template_id: int, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return crud.get_template_usage_histories(db, template_id=template_id, skip=skip, limit=limit)
+
+
+@app.get("/api/templates/{template_id}/historical-reference/{consumable_id}", response_model=Optional[schemas.TemplateHistoricalReference])
+def get_historical_reference(template_id: int, consumable_id: int, db: Session = Depends(get_db)):
+    return crud.get_template_historical_reference(db, template_id=template_id, consumable_id=consumable_id)
+
+
+@app.post("/api/applications/generate-from-template", response_model=schemas.GenerateApplicationResponse)
+def generate_application_from_template(
+    request: schemas.GenerateApplicationRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        return crud.generate_application_from_template(
+            db,
+            course_id=request.course_id,
+            template_id=request.template_id,
+            student_count=request.student_count
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/applications/submit-generated", response_model=schemas.Application)
+def submit_generated_application(
+    request: schemas.SubmitGeneratedApplicationRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        return crud.submit_generated_application(db, request=request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8132)

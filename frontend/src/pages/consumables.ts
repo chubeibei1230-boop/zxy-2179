@@ -197,7 +197,7 @@ function showConsumableModal(consumable?: Consumable) {
     </div>
   `;
 
-  const inputs = form.querySelectorAll('input, textarea');
+  const inputs = form.querySelectorAll('input, textarea') as NodeListOf<HTMLInputElement | HTMLTextAreaElement>;
   inputs[0].name = 'name';
   inputs[1].name = 'specification';
   inputs[2].name = 'unit';
