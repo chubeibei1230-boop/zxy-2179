@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高校实验中心耗材管理系统</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <h1>高校实验中心耗材管理系统</h1>
+      <nav id="nav">
+        <button data-page="dashboard" class="nav-btn active">首页</button>
+        <button data-page="consumables" class="nav-btn">耗材管理</button>
+        <button data-page="batches" class="nav-btn">批次管理</button>
+        <button data-page="courses" class="nav-btn">课次管理</button>
+        <button data-page="applications" class="nav-btn">申领管理</button>
+        <button data-page="inventory" class="nav-btn">库存查询</button>
+      </nav>
+    </header>
+    <main id="content" class="content"></main>
+  </div>
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close-btn">&times;</span>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
