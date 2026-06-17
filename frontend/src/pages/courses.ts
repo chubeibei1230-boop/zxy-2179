@@ -10,6 +10,8 @@ let templates: ConsumableTemplateWithStats[] = [];
 let selectedCourse: Course | null = null;
 let generatedApplication: GenerateApplicationResponse | null = null;
 let adjustedItems: { consumable_id: number; requested_quantity: number }[] = [];
+let currentApplicant: string = '';
+let currentPurpose: string = '';
 
 export async function renderCourses(container: HTMLElement) {
   container.innerHTML = `
@@ -195,6 +197,16 @@ function showCourseModal(course?: Course) {
       <label>实验室</label>
       <input type="text" class="form-control" name="lab_room" value="${course?.lab_room || ''}">
     </div>
+    <div class="form-group">
+      <label>耗材模板</label>
+      <select class="form-control" name="template_id">
+        <option value="">不选择模板</option>
+        ${templates.map(t => `
+          <option value="${t.id}" ${course?.template_id === t.id ? 'selected' : ''}>${t.name} (${t.total_consumables}种耗材)</option>
+        `).join('')}
+      </select>
+      <small class="form-text text-muted">选择模板后，可在课次列表点击"一键申领"快速生成耗材申领单</small>
+    </div>
     ${createTextarea('备注', course?.remark || '').innerHTML}
     <div class="form-actions">
       <button type="button" class="btn btn-secondary" id="cancel-btn">取消</button>
@@ -211,6 +223,11 @@ function showCourseModal(course?: Course) {
     e.preventDefault();
     const data = getFormData(form);
     data.student_count = parseInt(data.student_count) || 0;
+    if (data.template_id === '' || data.template_id === null || data.template_id === undefined) {
+      data.template_id = null;
+    } else {
+      data.template_id = parseInt(data.template_id);
+    }
 
     try {
       if (isEdit && course) {
@@ -293,7 +310,7 @@ function renderWizardStep1(container: HTMLElement) {
   container.querySelector('#next-step-btn')?.addEventListener('click', async () => {
     const templateId = parseInt((document.getElementById('template-select') as HTMLSelectElement).value);
     const applicant = (document.getElementById('applicant-input') as HTMLInputElement).value.trim();
-    const purpose = (document.getElementById('purpose-input') as HTMLInputElement).value.trim();
+    const purpose = (document.getElementById('purpose-input') as HTMLTextAreaElement).value.trim();
 
     if (!templateId) {
       showToast('请选择模板', 'error');
@@ -303,6 +320,9 @@ function renderWizardStep1(container: HTMLElement) {
       showToast('请输入申领人', 'error');
       return;
     }
+
+    currentApplicant = applicant;
+    currentPurpose = purpose;
 
     try {
       generatedApplication = await api.applications.generateFromTemplate({
@@ -419,8 +439,8 @@ function renderWizardStep2(container: HTMLElement) {
 
     try {
       const templateId = generatedApplication.template_id;
-      const applicant = (document.getElementById('applicant-input') as HTMLInputElement)?.value || selectedCourse.teacher;
-      const purpose = (document.getElementById('purpose-input') as HTMLInputElement)?.value || `${selectedCourse.course_name} 实验耗材`;
+      const applicant = currentApplicant || selectedCourse.teacher;
+      const purpose = currentPurpose || `${selectedCourse.course_name} 实验耗材`;
 
       const result = await api.applications.submitGenerated({
         course_id: selectedCourse.id,

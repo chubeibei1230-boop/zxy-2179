@@ -435,7 +435,8 @@ def generate_application_from_template(
             db,
             course_id=request.course_id,
             template_id=request.template_id,
-            student_count=request.student_count
+            student_count=request.student_count,
+            exclude_application_id=request.exclude_application_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

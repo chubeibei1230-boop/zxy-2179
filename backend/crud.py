@@ -69,6 +69,21 @@ def get_consumable_total_quantity(db: Session, consumable_id: int) -> float:
     return total or 0.0
 
 
+def get_consumable_available_quantity(db: Session, consumable_id: int) -> float:
+    today = date.today()
+    total = db.query(func.sum(models.Batch.quantity)).filter(
+        and_(
+            models.Batch.consumable_id == consumable_id,
+            models.Batch.quantity > 0,
+            or_(
+                models.Batch.expiry_date == None,
+                models.Batch.expiry_date >= today
+            )
+        )
+    ).scalar()
+    return total or 0.0
+
+
 def get_consumable_with_inventory(db: Session, consumable_id: int):
     consumable = get_consumable(db, consumable_id)
     if not consumable:
@@ -1004,6 +1019,7 @@ def generate_application_from_template(
 
         suggested_qty = round(item.quantity_per_student * student_count, 2)
         total_qty = get_consumable_total_quantity(db, item.consumable_id)
+        available_qty = get_consumable_available_quantity(db, item.consumable_id)
         threshold = get_threshold_by_consumable(db, item.consumable_id)
         expiring_batches = get_consumable_expiring_batches(db, item.consumable_id)
 
@@ -1015,12 +1031,12 @@ def generate_application_from_template(
 
         threshold_status = None
         if threshold:
-            if total_qty <= threshold.min_threshold:
+            if available_qty <= threshold.min_threshold:
                 threshold_status = "严重不足"
-            elif total_qty <= threshold.warning_threshold:
+            elif available_qty <= threshold.warning_threshold:
                 threshold_status = "库存预警"
 
-        gap_qty = max(0, suggested_qty - total_qty)
+        gap_qty = max(0, suggested_qty - available_qty)
         if gap_qty > 0:
             has_gaps = True
             gap_items_count += 1
@@ -1041,7 +1057,7 @@ def generate_application_from_template(
             student_count=student_count,
             suggested_quantity=suggested_qty,
             total_quantity=total_qty,
-            available_quantity=min(suggested_qty, total_qty),
+            available_quantity=min(suggested_qty, available_qty),
             threshold_status=threshold_status,
             expiring_batches=expiring_batches,
             is_duplicate=is_duplicate,
@@ -1053,7 +1069,7 @@ def generate_application_from_template(
 
         generated_items.append(generated_item)
         total_suggested += suggested_qty
-        total_available += min(suggested_qty, total_qty)
+        total_available += min(suggested_qty, available_qty)
 
     total_available_rate = round((total_available / total_suggested) * 100, 2) if total_suggested > 0 else 100.0
 

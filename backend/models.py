@@ -69,8 +69,11 @@ class Course(Base):
     end_time = Column(String(20))
     lab_room = Column(String(50))
     remark = Column(Text)
+    template_id = Column(Integer, ForeignKey("consumable_templates.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    template = relationship("ConsumableTemplate", back_populates="courses")
 
     applications = relationship("Application", back_populates="course")
 
@@ -168,6 +171,7 @@ class ConsumableTemplate(Base):
 
     items = relationship("TemplateItem", back_populates="template", cascade="all, delete-orphan")
     usage_histories = relationship("TemplateUsageHistory", back_populates="template")
+    courses = relationship("Course", back_populates="template")
 
 
 class TemplateItem(Base):

@@ -552,12 +552,60 @@ function showReviewModal(app: Application) {
 
 function showPrepareModal(app: Application) {
   const form = document.createElement('form');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const itemsHtml = app.items.map((item, index) => {
-    const availableBatches = batches.filter(b => b.consumable_id === item.consumable_id && b.quantity > 0);
-    const batchOptions = [
+    let availableBatches = batches.filter(b => b.consumable_id === item.consumable_id && b.quantity > 0);
+    
+    availableBatches = availableBatches.filter(b => {
+      if (!b.expiry_date) return true;
+      const expiryDate = new Date(b.expiry_date);
+      expiryDate.setHours(0, 0, 0, 0);
+      return expiryDate >= today;
+    });
+
+    availableBatches.sort((a, b) => {
+      if (!a.expiry_date && !b.expiry_date) return 0;
+      if (!a.expiry_date) return 1;
+      if (!b.expiry_date) return -1;
+      return new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime();
+    });
+
+    const expiringCutoff = new Date(today);
+    expiringCutoff.setDate(expiringCutoff.getDate() + 30);
+
+    const batchOptions = availableBatches.map(b => {
+      const expiryDate = b.expiry_date ? new Date(b.expiry_date) : null;
+      const isExpiring = expiryDate && expiryDate <= expiringCutoff;
+      const daysToExpiry = expiryDate ? Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
+      
+      let label = `${b.batch_no} (库存: ${b.quantity}${b.consumable?.unit || ''}`;
+      if (expiryDate) {
+        label += `, 过期: ${formatDate(b.expiry_date)}`;
+        if (isExpiring && daysToExpiry !== null) {
+          label += `, ${daysToExpiry}天后过期`;
+        }
+      }
+      label += ')';
+      
+      if (isExpiring) {
+        label = '🔥 ' + label;
+      }
+
+      return { 
+        value: String(b.id), 
+        label: label,
+        isExpiring: isExpiring,
+        batch: b
+      };
+    });
+
+    const defaultBatchId = batchOptions.find(b => b.isExpiring)?.value || batchOptions[0]?.value || '';
+
+    const selectOptions = [
       { value: '', label: '请选择批次' },
-      ...availableBatches.map(b => ({ value: String(b.id), label: `${b.batch_no} (库存: ${b.quantity}${b.consumable?.unit || ''}, 过期: ${formatDate(b.expiry_date)})` }))
+      ...batchOptions
     ];
 
     return `
@@ -573,8 +621,9 @@ function showPrepareModal(app: Application) {
         <div class="form-group">
           <label>批次<span class="required"> *</span></label>
           <select class="form-control" name="batch_${index}" required>
-            ${batchOptions.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
+            ${selectOptions.map(o => `<option value="${o.value}" ${o.value === defaultBatchId ? 'selected' : ''}>${o.label}</option>`).join('')}
           </select>
+          ${batchOptions.some(b => b.isExpiring) ? '<small class="form-text text-warning">🔥 标记的批次为临期批次，建议优先选用</small>' : ''}
         </div>
         <div class="form-group">
           <label>批准数量<span class="required"> *</span></label>

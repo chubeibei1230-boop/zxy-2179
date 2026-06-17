@@ -44,8 +44,10 @@ export interface Course {
   end_time: string | null;
   lab_room: string | null;
   remark: string | null;
+  template_id: number | null;
   created_at: string;
   updated_at: string;
+  template: ConsumableTemplate | null;
 }
 
 export interface InventoryThreshold {

@@ -77,6 +77,7 @@ class CourseBase(BaseModel):
     end_time: Optional[str] = Field(None, max_length=20)
     lab_room: Optional[str] = Field(None, max_length=50)
     remark: Optional[str] = None
+    template_id: Optional[int] = None
 
 
 class CourseCreate(CourseBase):
@@ -91,6 +92,7 @@ class Course(CourseBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    template: Optional["ConsumableTemplate"] = None
 
     class Config:
         from_attributes = True
@@ -427,8 +429,7 @@ class GenerateApplicationRequest(BaseModel):
     course_id: int
     template_id: int
     student_count: int = Field(..., gt=0)
-    applicant: str = Field(..., max_length=50)
-    purpose: Optional[str] = None
+    exclude_application_id: Optional[int] = None
 
 
 class GeneratedApplicationItem(BaseModel):
